@@ -11,3 +11,4 @@ Tiny implementation of the GCC Objective C runtime, intended for microcontroller
 - [ ] Categories
 - [ ] Protocols
 - [ ] Some of the foundation classes
+- [ ] Exception handling
