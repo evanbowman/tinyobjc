@@ -23,7 +23,7 @@ static inline TinyObjcClass* abi_get_super(TinyObjcClass* class)
 
 
 static inline void abi_set_super(TinyObjcClass* class,
-                                      TinyObjcClass* super)
+                                 TinyObjcClass* super)
 {
     ((struct objc_class_gsv1*)class)->super_class = (Class)super;
 }
