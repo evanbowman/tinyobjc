@@ -4,16 +4,115 @@
 #include <stdlib.h>
 
 
-typedef struct TinyObjcClass {
-    struct TinyObjcClass* class_;
-    struct TinyObjcClass* super_class_;
-    struct objc_method_list_gcc* method_list_;
-    struct TinyObjcCategory* categories_;
-    struct objc_method_gcc** dtable_;
-    const char* name_;
-    unsigned instance_size_;
-    BOOL resolved_;
-} TinyObjcClass;
+////////////////////////////////////////////////////////////////////////////////
+//
+// Opaque GCC ABI accessors
+//
+////////////////////////////////////////////////////////////////////////////////
+
+
+typedef void TinyObjcClass;
+typedef void* MethodList;
+typedef void* Method;
+
+
+static inline TinyObjcClass* abi_get_super(TinyObjcClass* class)
+{
+    return ((struct objc_class_gsv1*)class)->super_class;
+}
+
+
+static inline void abi_set_super(TinyObjcClass* class,
+                                      TinyObjcClass* super)
+{
+    ((struct objc_class_gsv1*)class)->super_class = (Class)super;
+}
+
+
+static inline const char* abi_get_name(TinyObjcClass* class)
+{
+    return ((struct objc_class_gsv1*)class)->name;
+}
+
+
+static inline void abi_set_name(TinyObjcClass* class, const char* name)
+{
+    ((struct objc_class_gsv1*)class)->name = name;
+}
+
+
+static inline BOOL abi_is_resolved(TinyObjcClass* class)
+{
+    return ((struct objc_class_gsv1*)class)->info;
+}
+
+
+static inline void abi_set_resolved(TinyObjcClass* class, BOOL resolved)
+{
+    ((struct objc_class_gsv1*)class)->info = resolved;
+}
+
+
+static inline TinyObjcClass* abi_class(TinyObjcClass* class)
+{
+    return ((struct objc_class_gsv1*)class)->isa;
+}
+
+
+static inline size_t abi_instance_size(TinyObjcClass* class)
+{
+    return ((struct objc_class_gsv1*)class)->instance_size;
+}
+
+
+static inline MethodList abi_methods(TinyObjcClass* class)
+{
+    return ((struct objc_class_gsv1*)class)->methods;
+}
+
+
+static inline Method* abi_get_dtable(TinyObjcClass* class)
+{
+    return ((struct objc_class_gsv1*)class)->dtable;
+}
+
+
+static inline void abi_set_dtable(TinyObjcClass* class, Method* dtable)
+{
+    ((struct objc_class_gsv1*)class)->dtable = dtable;
+}
+
+
+static inline int abi_method_count(MethodList methods)
+{
+    return ((struct objc_method_list_gcc*)methods)->count;
+}
+
+
+static inline Method abi_method_at(MethodList methods, int index)
+{
+    return &((struct objc_method_list_gcc*)methods)->methods[index];
+}
+
+
+static inline const char* abi_method_name(Method method)
+{
+    return ((const char*)&((struct objc_method_gcc*)method)->selector->index);
+}
+
+
+static inline const char* abi_method_typeinfo(Method method)
+{
+    return ((struct objc_method_gcc*)method)->types;
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// TinyObjc Library
+//
+////////////////////////////////////////////////////////////////////////////////
 
 
 static struct TinyObjcClassTable {
@@ -21,9 +120,9 @@ static struct TinyObjcClassTable {
 } tinyobjc_classes[CLASS_TABLE_SIZE];
 
 
-static long long nil_method(id self, SEL _cmd)
+static id nil_method(id self, SEL _cmd)
 {
-    return 0;
+    return self;
 }
 
 
@@ -42,12 +141,17 @@ static struct objc_method_gcc void_method_gcc = {
 
 void tinyobjc_make_cache(TinyObjcClass* class)
 {
-    class->dtable_ =
-        malloc(METHOD_CACHE_SIZE * sizeof(struct objc_method_gcc *));
+    if (abi_get_dtable(class)) {
+        free(abi_get_dtable(class));
+    }
+
+    Method* dtable = malloc(METHOD_CACHE_SIZE * sizeof(Method));
 
     for (int i = 0; i < METHOD_CACHE_SIZE; ++i) {
-        class->dtable_[i] = &void_method_gcc;
+        dtable[i] = &void_method_gcc;
     }
+
+    abi_set_dtable(class, dtable);
 }
 
 
@@ -56,7 +160,7 @@ static TinyObjcClass* tinyobjc_get_class(const char* name)
     for (int i = 0; i < CLASS_TABLE_SIZE; ++i) {
         if (tinyobjc_classes[i].class_) {
 
-            if (strcmp(name, tinyobjc_classes[i].class_->name_) == 0) {
+            if (strcmp(name, abi_get_name(tinyobjc_classes[i].class_)) == 0) {
 
                 TinyObjcClass* result = tinyobjc_classes[i].class_;
 
@@ -95,7 +199,7 @@ static uint32_t tinyobjc_fnv32(const char *s)
 
 static void tinyobjc_resolve_class(TinyObjcClass* class)
 {
-    if (class->resolved_) {
+    if (abi_is_resolved(class)) {
         return;
     }
 
@@ -103,24 +207,25 @@ static void tinyobjc_resolve_class(TinyObjcClass* class)
     // go ahead and resolve the whole class chain, so we don't need complicated
     // logic to figure out whether we're a metaclass or not, to link to the
     // correct metaclass in the parallel superclass meta chain.
-    class = tinyobjc_get_class(class->name_);
+    class = tinyobjc_get_class(abi_get_name(class));
 
-    if (class->super_class_ == NULL) {
+    if (abi_get_super(class) == NULL) {
         return;
     }
 
-    TinyObjcClass* super = tinyobjc_get_class((const char*)class->super_class_);
+    TinyObjcClass* super =
+        tinyobjc_get_class((const char*)abi_get_super(class));
 
     if (!super) {
         // Hmm... what? The linker should have raised an error...
         while (1) ;
     }
 
-    class->super_class_ = super;
-    class->class_->super_class_ = super->class_;
+    abi_set_super(class, super);
+    abi_set_super(abi_class(class), abi_class(super));
 
-    class->resolved_ = YES;
-    class->class_->resolved_ = YES;
+    abi_set_resolved(class, YES);
+    abi_set_resolved(abi_class(class), YES);
 }
 
 
@@ -132,7 +237,7 @@ id objc_get_class(const char* name)
 
 size_t tinyobjc_class_instance_size(id class)
 {
-    return ((TinyObjcClass*)class)->instance_size_;
+    return abi_instance_size(class);
 }
 
 
@@ -146,29 +251,25 @@ static struct objc_method_gcc* objc_load_method_slow(TinyObjcClass* class,
                                                      SEL selector)
 {
     while (1) {
-        if (class->method_list_) {
-            struct objc_method_list_gcc* methods = class->method_list_;
+        if (abi_methods(class)) {
+            MethodList methods = abi_methods(class);
 
-            while (methods) {
-                for (int i = 0; i < methods->count; ++i) {
-                    struct objc_method_gcc* method = &methods->methods[i];
+            for (int i = 0; i < abi_method_count(methods); ++i) {
+                Method method = abi_method_at(methods, i);
 
-                    const char* method_sel_name =
-                        (const char*)&method->selector->index;
+                const char* method_sel_name = abi_method_name(method);
+                const char* typeinfo = abi_method_typeinfo(method);
 
-                    if (type_compare(method->types, selector->types) &&
-                        (selector->name == method_sel_name ||
-                         strcmp(selector->name, method_sel_name) == 0)) {
-                        return method;
-                    }
+                if (type_compare(typeinfo, selector->types) &&
+                    (selector->name == method_sel_name ||
+                     strcmp(selector->name, method_sel_name) == 0)) {
+                    return method;
                 }
-                methods = methods->next;
             }
-
         }
 
-        if (class->super_class_) {
-            class = class->super_class_;
+        if (abi_get_super(class)) {
+            class = (TinyObjcClass*)abi_get_super(class);
         } else {
             // FIXME...
             return NULL;
@@ -181,12 +282,12 @@ IMP tinyobjc_msg_lookup(TinyObjcClass* class, SEL selector)
 {
     tinyobjc_resolve_class(class);
 
-    if (class->dtable_) {
-        uint32_t hash = tinyobjc_fnv32(selector->name);
+    Method* dtable = abi_get_dtable(class);
 
-        uint32_t offset = hash % METHOD_CACHE_SIZE;
+    if (dtable) {
+        uint32_t offset = tinyobjc_fnv32(selector->name) % METHOD_CACHE_SIZE;
 
-        struct objc_method_gcc* cached = class->dtable_[offset];
+        struct objc_method_gcc* cached = dtable[offset];
 
         const char* cached_name = (const char*)&(cached)->selector->index;
 
@@ -195,7 +296,7 @@ IMP tinyobjc_msg_lookup(TinyObjcClass* class, SEL selector)
         }
 
         struct objc_method_gcc* found = objc_load_method_slow(class, selector);
-        class->dtable_[offset] = found;
+        dtable[offset] = found;
 
         return found->imp;
     }
@@ -236,34 +337,13 @@ IMP objc_msg_lookup(id receiver, SEL selector)
 
 static TinyObjcClass* tinyobjc_make_class(struct objc_class_gsv1* class)
 {
-    TinyObjcClass* new = malloc(sizeof(TinyObjcClass));
+    abi_set_dtable(abi_class(class), NULL);
+    abi_set_resolved(abi_class(class), NO);
 
-    new->class_ = malloc(sizeof(TinyObjcClass));
-    new->class_->name_ = ((struct objc_class_gsv1*)class->isa)->name;
+    abi_set_dtable(abi_class(abi_class(class)), NULL);
+    abi_set_resolved(abi_class(abi_class(class)), NO);
 
-    // The GCC ABI stores superclasses as strings. We will do the same, and
-    // resolve the pointers to the actual classes after loading everything.
-    new->class_->super_class_ = (TinyObjcClass*)
-        ((struct objc_class_gsv1*)class->isa)->super_class;
-
-    new->class_->method_list_ =
-        ((struct objc_class_gsv1*)((struct objc_class_gsv1*)class->isa)->isa)->methods;
-    new->class_->class_ = NULL;
-    new->class_->resolved_ = NO;
-    new->class_->dtable_ = NULL;
-
-    new->class_->instance_size_ = (sizeof (TinyObjcClass));
-
-
-    new->name_ = new->class_->name_;
-    new->super_class_ = new->class_->super_class_;
-    new->method_list_ = ((struct objc_class_gsv1*)class->isa)->methods;
-    new->resolved_ = NO;
-    new->dtable_ = NULL;
-
-    new->instance_size_ = ((struct objc_class_gsv1*)class->isa)->instance_size;
-
-    return new;
+    return (TinyObjcClass*)class->isa;
 }
 
 
