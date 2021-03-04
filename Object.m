@@ -64,4 +64,17 @@ size_t tinyobjc_class_instance_size(id class);
     return tinyobjc_class_instance_size(self);
 }
 
+
++ (Class) class
+{
+    return self;
+}
+
+
++ (Class) superclass
+{
+    return super;
+}
+
+
 @end

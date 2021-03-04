@@ -22,4 +22,8 @@
 
 + (size_t) instanceSize;
 
++ (Class) class;
+
++ (Class) superclass;
+
 @end
