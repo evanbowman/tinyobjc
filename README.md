@@ -5,7 +5,7 @@ Tiny implementation of the Objective-C runtime, intended for microcontrollers an
 - [x] Object root class
 - [x] Method dispatch
 - [x] Object allocation
-- [ ] Method caching
+- [x] Method caching
 - [ ] Unit tests
 - [ ] Message forwarding
 - [ ] Categories

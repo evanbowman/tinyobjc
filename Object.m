@@ -4,6 +4,7 @@
 
 
 size_t tinyobjc_class_instance_size(id class);
+void tinyobjc_make_cache(void* class);
 
 
 @implementation Object
@@ -74,6 +75,12 @@ size_t tinyobjc_class_instance_size(id class);
 + (Class) superclass
 {
     return super;
+}
+
+
++ (void) cache
+{
+    tinyobjc_make_cache(self);
 }
 
 

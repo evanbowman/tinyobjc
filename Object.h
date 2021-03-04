@@ -26,4 +26,6 @@
 
 + (Class) superclass;
 
++ (void) cache;
+
 @end

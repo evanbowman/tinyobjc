@@ -1,22 +1,17 @@
+#include "tinyobjc_runtime.h"
 #include "module_abi.h"
 #include <string.h>
 #include <stdlib.h>
-
-
-// TODO: Dynamically allocate the class table, use pools.
-enum {
-    CLASS_TABLE_SIZE = 100
-};
-
 
 typedef struct TinyObjcClass {
     struct TinyObjcClass* class_;
     struct TinyObjcClass* super_class_;
     struct objc_method_list_gcc* method_list_;
     struct TinyObjcCategory* categories_;
+    struct objc_method_gcc** dtable_;
     const char* name_;
-    unsigned char resolved_;
     unsigned instance_size_;
+    unsigned char resolved_;
 } TinyObjcClass;
 
 
@@ -25,17 +20,75 @@ static struct TinyObjcClassTable {
 } tinyobjc_classes[CLASS_TABLE_SIZE];
 
 
+static long long nil_method(id self, SEL _cmd)
+{
+    return 0;
+}
+
+
+static struct objc_selector void_selector = {
+    { .name = ""},
+    .types = ""
+};
+
+
+static struct objc_method_gcc void_method_gcc = {
+    .selector = &void_selector,
+    .types = "",
+    .imp = (IMP)(void*)nil_method,
+};
+
+
+void tinyobjc_make_cache(TinyObjcClass* class)
+{
+    class->dtable_ =
+        malloc(METHOD_CACHE_SIZE * sizeof(struct objc_method_gcc *));
+
+    for (int i = 0; i < METHOD_CACHE_SIZE; ++i) {
+        class->dtable_[i] = &void_method_gcc;
+    }
+}
+
+
 static TinyObjcClass* tinyobjc_get_class(const char* name)
 {
     for (int i = 0; i < CLASS_TABLE_SIZE; ++i) {
         if (tinyobjc_classes[i].class_) {
+
             if (strcmp(name, tinyobjc_classes[i].class_->name_) == 0) {
-                return tinyobjc_classes[i].class_;
+
+                TinyObjcClass* result = tinyobjc_classes[i].class_;
+
+                if (i > 0) {
+                    // Move to front.
+                    tinyobjc_classes[i].class_ = tinyobjc_classes[i - 1].class_;
+                    tinyobjc_classes[i - 1].class_ = result;
+                }
+
+                return result;
             }
         }
     }
 
     return NULL;
+}
+
+
+#define TINYOBJC_FNV_PRIME_32 16777619
+#define TINYOBJC_FNV_OFFSET_32 2166136261U
+
+
+static uint32_t tinyobjc_fnv32(const char *s)
+{
+    uint32_t hash = TINYOBJC_FNV_OFFSET_32;
+
+    while (*s != '\0') {
+        hash = hash ^ (*s);
+        hash = hash * TINYOBJC_FNV_PRIME_32;
+        ++s;
+    }
+
+    return hash;
 }
 
 
@@ -88,10 +141,8 @@ static int type_compare(const char* lhs, const char* rhs)
 }
 
 
-static long long nil_method(id self, SEL _cmd) { return 0; }
-
-
-static void* objc_load_method_slow(TinyObjcClass* class, SEL selector)
+static struct objc_method_gcc* objc_load_method_slow(TinyObjcClass* class,
+                                                     SEL selector)
 {
     while (1) {
         if (class->method_list_) {
@@ -107,7 +158,7 @@ static void* objc_load_method_slow(TinyObjcClass* class, SEL selector)
                     if (type_compare(method->types, selector->types) &&
                         (selector->name == method_sel_name ||
                          strcmp(selector->name, method_sel_name) == 0)) {
-                        return method->imp;
+                        return method;
                     }
                 }
                 methods = methods->next;
@@ -119,9 +170,36 @@ static void* objc_load_method_slow(TinyObjcClass* class, SEL selector)
             class = class->super_class_;
         } else {
             // FIXME...
-            return nil_method;
+            return NULL;
         }
     }
+}
+
+
+IMP tinyobjc_msg_lookup(TinyObjcClass* class, SEL selector)
+{
+    tinyobjc_resolve_class(class);
+
+    if (class->dtable_) {
+        uint32_t hash = tinyobjc_fnv32(selector->name);
+
+        uint32_t offset = hash % METHOD_CACHE_SIZE;
+
+        struct objc_method_gcc* cached = class->dtable_[offset];
+
+        const char* cached_name = (const char*)&(cached)->selector->index;
+
+        if (strcmp(selector->name, cached_name) == 0) {
+            return cached->imp;
+        }
+
+        struct objc_method_gcc* found = objc_load_method_slow(class, selector);
+        class->dtable_[offset] = found;
+
+        return found->imp;
+    }
+
+    return objc_load_method_slow(class, selector)->imp;
 }
 
 
@@ -130,33 +208,28 @@ IMP objc_msg_lookup_super(struct objc_super* super, SEL selector)
     id receiver = super->receiver;
 
     if (__builtin_expect(receiver == nil, NO)) {
-        return (IMP)nil_method;
+        return (IMP)(void*)nil_method;
     }
 
     // I wish there was a better way than looking up the class by string name :/
     TinyObjcClass* class = tinyobjc_get_class((const char*)super->class);
     if (class) {
-        tinyobjc_resolve_class(class);
-        return objc_load_method_slow(class, selector);
+        return tinyobjc_msg_lookup(class, selector);
     }
 
-    return (IMP)nil_method;
+    return (IMP)(void*)nil_method;
 }
 
 
 IMP objc_msg_lookup(id receiver, SEL selector)
 {
     if (__builtin_expect(receiver == nil, NO)) {
-        return (IMP)nil_method;
+        return (IMP)(void*)nil_method;
     }
 
     Class class = receiver->class_pointer;
 
-    tinyobjc_resolve_class((TinyObjcClass*)class);
-
-    // TODO: Implement method caching...
-
-    return objc_load_method_slow((TinyObjcClass*)class, selector);
+    return tinyobjc_msg_lookup((TinyObjcClass*)class, selector);
 }
 
 
