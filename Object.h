@@ -1,12 +1,17 @@
 
 @interface Object
 {
-	Class isa;	/* A pointer to the instance's class structure */
+    Class isa;
+    int retain_count_;
 }
 
 + (id)alloc;
-+ (id)new;
 - (id)free;
+
++ (id)new;
 - (id)init;
+
+- (void)release;
+- (instancetype)retain;
 
 @end

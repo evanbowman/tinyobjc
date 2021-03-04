@@ -74,7 +74,11 @@ id objc_get_class(const char* name)
 
 id __objc_allocate_instance(id class)
 {
-    id mem = malloc(((TinyObjcClass*)class)->instance_size_);
+    const size_t size = ((TinyObjcClass*)class)->instance_size_;
+
+    id mem = malloc(size);
+    memset(mem, 0, size);
+
     mem->class_pointer = (Class)class;
     return mem;
 }
@@ -101,8 +105,13 @@ static void* objc_load_method_slow(TinyObjcClass* class, SEL selector)
 
             for (int i = 0; i < methods->count; ++i) {
                 struct objc_method_gcc* method = &methods->methods[i];
+
+                const char* method_sel_name =
+                    (const char*)&method->selector->index;
+
                 if (type_compare(method->types, selector->types) &&
-                    strcmp(selector->name, ((char*)&method->selector->index)) == 0) {
+                    (selector->name == method_sel_name ||
+                     strcmp(selector->name, method_sel_name) == 0)) {
                     return method->imp;
                 }
             }
