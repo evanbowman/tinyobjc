@@ -275,6 +275,10 @@ static void tinyobjc_load_class(struct objc_class_gsv1* class)
             return;
         }
     }
+
+    while (1) {
+        // FIXME: dynamically resize the class table.
+    }
 }
 
 void __objc_exec_class(struct objc_module_abi_8* module)
