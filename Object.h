@@ -9,7 +9,6 @@
 }
 
 + (id) alloc;
-- (id) free;
 
 + (id) new;
 - (id) init;
@@ -20,5 +19,7 @@
 + (id) retain;
 
 - (int) retainCount;
+
++ (size_t) instanceSize;
 
 @end

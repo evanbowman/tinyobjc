@@ -1,27 +1,28 @@
 #import "Object.h"
+#import "AutoReleasePool.h"
+#include <stdlib.h>
 
 
-id __objc_allocate_instance(id class);
-id __objc_free_instance(id instance);
+size_t tinyobjc_class_instance_size(id class);
 
 
 @implementation Object
 
 + (id) alloc
 {
-    return [__objc_allocate_instance(self) retain];
+    const size_t size = tinyobjc_class_instance_size(self);
+
+    id obj = calloc(1, size);
+
+    obj->class_pointer = self;
+
+    return [obj retain];
 }
 
 
 + (id) new
 {
     return [[self alloc] init];
-}
-
-
-- (id) free
-{
-    return __objc_free_instance(self);
 }
 
 
@@ -34,7 +35,7 @@ id __objc_free_instance(id instance);
 - (void) release
 {
     if (--retainCount_ == 0) {
-        [self free];
+        free(self);
     }
 }
 
@@ -57,5 +58,10 @@ id __objc_free_instance(id instance);
     return retainCount_;
 }
 
+
++ (size_t) instanceSize
+{
+    return tinyobjc_class_instance_size(self);
+}
 
 @end

@@ -1,7 +1,6 @@
 #include "module_abi.h"
 #include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
 
 
 // TODO: Dynamically allocate the class table, use pools.
@@ -77,22 +76,9 @@ id objc_get_class(const char* name)
 }
 
 
-id __objc_allocate_instance(id class)
+size_t tinyobjc_class_instance_size(id class)
 {
-    const size_t size = ((TinyObjcClass*)class)->instance_size_;
-
-    id mem = malloc(size);
-    memset(mem, 0, size);
-
-    mem->class_pointer = (Class)class;
-    return mem;
-}
-
-
-id __objc_free_instance(id self)
-{
-    free(self);
-    return nil;
+    return ((TinyObjcClass*)class)->instance_size_;
 }
 
 
@@ -133,7 +119,6 @@ static void* objc_load_method_slow(TinyObjcClass* class, SEL selector)
             class = class->super_class_;
         } else {
             // FIXME...
-            puts("method not found");
             return nil_method;
         }
     }
@@ -206,7 +191,7 @@ static TinyObjcClass* tinyobjc_make_class(struct objc_class_gsv1* class)
 }
 
 
-static void objc_load_class(struct objc_class_gsv1* class)
+static void tinyobjc_load_class(struct objc_class_gsv1* class)
 {
     for (int i = 0; i < CLASS_TABLE_SIZE; ++i) {
         if (tinyobjc_classes[i].class_ == NULL) {
@@ -231,7 +216,7 @@ void __objc_exec_class(struct objc_module_abi_8* module)
     void* defs = symbols->definitions;
 
     for (int i = 0; i < symbols->class_count; ++i) {
-        objc_load_class(defs);
+        tinyobjc_load_class(defs);
         ++defs;
     }
 
