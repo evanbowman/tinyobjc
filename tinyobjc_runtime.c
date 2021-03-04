@@ -97,6 +97,9 @@ static int type_compare(const char* lhs, const char* rhs)
 }
 
 
+static long long nil_method(id self, SEL _cmd) { return 0; }
+
+
 static void* objc_load_method_slow(TinyObjcClass* class, SEL selector)
 {
     while (1) {
@@ -120,14 +123,19 @@ static void* objc_load_method_slow(TinyObjcClass* class, SEL selector)
         if (class->super_class_) {
             class = class->super_class_;
         } else {
-            return nil;
+            // FIXME...
+            return nil_method;
         }
     }
 }
 
 
-id objc_msg_lookup(id receiver, SEL selector)
+IMP objc_msg_lookup(id receiver, SEL selector)
 {
+    if (__builtin_expect(receiver == nil, NO)) {
+        return (IMP)nil_method;
+    }
+
     Class class = receiver->class_pointer;
 
     tinyobjc_resolve_class((TinyObjcClass*)class);
