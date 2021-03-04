@@ -1,5 +1,4 @@
 #import "Object.h"
-#import "AutoReleasePool.h"
 
 
 id __objc_allocate_instance(id class);
