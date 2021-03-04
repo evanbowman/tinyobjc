@@ -10,3 +10,4 @@ Tiny implementation of the GCC Objective C runtime, intended for microcontroller
 - [ ] Message forwarding
 - [ ] Categories
 - [ ] Protocols
+- [ ] Some of the foundation classes
