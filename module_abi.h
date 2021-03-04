@@ -370,3 +370,25 @@ struct objc_selector
 	 */
 	const char * types;
 };
+
+
+#ifndef __unsafe_unretained
+#	ifndef __has_feature
+#		define __unsafe_unretained
+#	elif !__has_feature(objc_arc)
+#		define __unsafe_unretained
+#	endif
+#endif
+
+
+struct objc_super
+{
+	/** The receiver of the message. */
+	__unsafe_unretained id receiver;
+	/** The class containing the method to call. */
+#	if !defined(__cplusplus)  &&  !__OBJC2__
+	Class class;
+#	else
+	Class super_class;
+#	endif
+};

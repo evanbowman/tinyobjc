@@ -5,16 +5,20 @@
 @interface Object
 {
     Class isa;
-    int retain_count_;
+    int retainCount_;
 }
 
-+ (id)alloc;
-- (id)free;
++ (id) alloc;
+- (id) free;
 
-+ (id)new;
-- (id)init;
++ (id) new;
+- (id) init;
 
-- (void)release;
-- (instancetype)retain;
+- (void) release;
+- (instancetype) retain;
+
++ (id) retain;
+
+- (int) retainCount;
 
 @end

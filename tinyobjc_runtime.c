@@ -14,6 +14,7 @@ typedef struct TinyObjcClass {
     struct TinyObjcClass* class_;
     struct TinyObjcClass* super_class_;
     struct objc_method_list_gcc* method_list_;
+    struct TinyObjcCategory* categories_;
     const char* name_;
     unsigned char resolved_;
     unsigned instance_size_;
@@ -50,6 +51,10 @@ static void tinyobjc_resolve_class(TinyObjcClass* class)
     // logic to figure out whether we're a metaclass or not, to link to the
     // correct metaclass in the parallel superclass meta chain.
     class = tinyobjc_get_class(class->name_);
+
+    if (class->super_class_ == NULL) {
+        return;
+    }
 
     TinyObjcClass* super = tinyobjc_get_class((const char*)class->super_class_);
 
@@ -106,27 +111,51 @@ static void* objc_load_method_slow(TinyObjcClass* class, SEL selector)
         if (class->method_list_) {
             struct objc_method_list_gcc* methods = class->method_list_;
 
-            for (int i = 0; i < methods->count; ++i) {
-                struct objc_method_gcc* method = &methods->methods[i];
+            while (methods) {
+                for (int i = 0; i < methods->count; ++i) {
+                    struct objc_method_gcc* method = &methods->methods[i];
 
-                const char* method_sel_name =
-                    (const char*)&method->selector->index;
+                    const char* method_sel_name =
+                        (const char*)&method->selector->index;
 
-                if (type_compare(method->types, selector->types) &&
-                    (selector->name == method_sel_name ||
-                     strcmp(selector->name, method_sel_name) == 0)) {
-                    return method->imp;
+                    if (type_compare(method->types, selector->types) &&
+                        (selector->name == method_sel_name ||
+                         strcmp(selector->name, method_sel_name) == 0)) {
+                        return method->imp;
+                    }
                 }
+                methods = methods->next;
             }
+
         }
 
         if (class->super_class_) {
             class = class->super_class_;
         } else {
             // FIXME...
+            puts("method not found");
             return nil_method;
         }
     }
+}
+
+
+IMP objc_msg_lookup_super(struct objc_super* super, SEL selector)
+{
+    id receiver = super->receiver;
+
+    if (__builtin_expect(receiver == nil, NO)) {
+        return (IMP)nil_method;
+    }
+
+    // I wish there was a better way than looking up the class by string name :/
+    TinyObjcClass* class = tinyobjc_get_class((const char*)super->class);
+    if (class) {
+        tinyobjc_resolve_class(class);
+        return objc_load_method_slow(class, selector);
+    }
+
+    return (IMP)nil_method;
 }
 
 
@@ -205,9 +234,6 @@ void __objc_exec_class(struct objc_module_abi_8* module)
         objc_load_class(defs);
         ++defs;
     }
-
-    // TODO: load categories
-    while (symbols->category_count) ;
 
     for (int i = 0; i < symbols->category_count; ++i) {
         ++defs;
