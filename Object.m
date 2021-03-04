@@ -72,6 +72,12 @@ void tinyobjc_make_cache(void* class);
 }
 
 
+- (Class) class
+{
+    return isa;
+}
+
+
 + (Class) superclass
 {
     return super;

@@ -23,6 +23,7 @@
 + (size_t) instanceSize;
 
 + (Class) class;
+- (Class) class;
 
 + (Class) superclass;
 
