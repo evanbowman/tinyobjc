@@ -1,5 +1,5 @@
 # tinyobjc
-Tiny implementation of the GCC Objective C runtime, intended for microcontrollers. Requires GCC Objective C module version 8.
+Tiny implementation of the Objective-C runtime, intended for micorcontrollers and video game consoles. I created this library so that I could run Objective-C on the Gameboy Advance, but there is nothing platform-specific in this library, it compiles fine on linux and various other systems.
 
 - [x] Loader for Classes and Metaclasses
 - [x] Object root class
