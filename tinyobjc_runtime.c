@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+
 typedef struct TinyObjcClass {
     struct TinyObjcClass* class_;
     struct TinyObjcClass* super_class_;
@@ -11,7 +12,7 @@ typedef struct TinyObjcClass {
     struct objc_method_gcc** dtable_;
     const char* name_;
     unsigned instance_size_;
-    unsigned char resolved_;
+    BOOL resolved_;
 } TinyObjcClass;
 
 
@@ -118,8 +119,8 @@ static void tinyobjc_resolve_class(TinyObjcClass* class)
     class->super_class_ = super;
     class->class_->super_class_ = super->class_;
 
-    class->resolved_ = 1;
-    class->class_->resolved_ = 1;
+    class->resolved_ = YES;
+    class->class_->resolved_ = YES;
 }
 
 
@@ -248,7 +249,8 @@ static TinyObjcClass* tinyobjc_make_class(struct objc_class_gsv1* class)
     new->class_->method_list_ =
         ((struct objc_class_gsv1*)((struct objc_class_gsv1*)class->isa)->isa)->methods;
     new->class_->class_ = NULL;
-    new->class_->resolved_ = 0;
+    new->class_->resolved_ = NO;
+    new->class_->dtable_ = NULL;
 
     new->class_->instance_size_ = (sizeof (TinyObjcClass));
 
@@ -256,7 +258,8 @@ static TinyObjcClass* tinyobjc_make_class(struct objc_class_gsv1* class)
     new->name_ = new->class_->name_;
     new->super_class_ = new->class_->super_class_;
     new->method_list_ = ((struct objc_class_gsv1*)class->isa)->methods;
-    new->resolved_ = 0;
+    new->resolved_ = NO;
+    new->dtable_ = NULL;
 
     new->instance_size_ = ((struct objc_class_gsv1*)class->isa)->instance_size;
 

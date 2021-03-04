@@ -1,6 +1,6 @@
 #pragma once
 
-#include </opt/devkitpro/devkitARM/lib/gcc/arm-none-eabi/10.2.0/include/objc/objc.h>
+#include "objc.h"
 #include <stdint.h>
 
 
