@@ -131,7 +131,13 @@ static struct TinyObjcClassTable {
 } tinyobjc_classes[CLASS_TABLE_SIZE];
 
 
-static const char* selector_table[SELECTOR_TABLE_SIZE] = {
+typedef struct {
+    const char* name_;
+    const char* types_;
+} CachedSelector;
+
+
+static CachedSelector selector_table[SELECTOR_TABLE_SIZE] = {
 };
 
 
@@ -141,8 +147,8 @@ static const char* selector_table[SELECTOR_TABLE_SIZE] = {
 // selector table.
 static inline BOOL tinyobjc_is_sel_name_registered(const char* name)
 {
-    return ((const char**) name >= selector_table) &&
-           ((const char**) name < selector_table + SELECTOR_TABLE_SIZE);
+    return ((CachedSelector*) name >= selector_table) &&
+           ((CachedSelector*) name < selector_table + SELECTOR_TABLE_SIZE);
 }
 
 
@@ -157,14 +163,17 @@ const char* selector_name(SEL s)
 }
 
 
-static const char** tinyobjc_sel_register_name(const char* name)
+static const char* tinyobjc_sel_register_name(const char* name,
+                                              const char* types)
 {
     for (int i = 0; i < SELECTOR_TABLE_SIZE; ++i) {
-        if (selector_table[i] == NULL) {
-            selector_table[i] = name;
-            return &selector_table[i];
-        } else if (strcmp(selector_table[i], name) == 0) {
-            return &selector_table[i];
+        if (selector_table[i].name_ == NULL) {
+            selector_table[i].name_ = name;
+            selector_table[i].types_ = types;
+            return (const char*)&selector_table[i];
+        } else if (strcmp(selector_table[i].name_, name) == 0 &&
+                   strcmp(selector_table[i].types_, types) == 0) {
+            return (const char*)&selector_table[i];
         }
     }
 
@@ -288,12 +297,12 @@ size_t tinyobjc_class_instance_size(id class)
 }
 
 
-static int type_compare(const char* lhs, const char* rhs)
-{
-    // TODO: find a way to avoid the string compare for the typename.
-    // Some characters in the typename may be ignored when matching, right?
-    return lhs == rhs || strcmp(lhs, rhs) == 0;
-}
+/* static int type_compare(const char* lhs, const char* rhs) */
+/* { */
+/*     // TODO: find a way to avoid the string compare for the typename. */
+/*     // Some characters in the typename may be ignored when matching, right? */
+/*     return lhs == rhs || strcmp(lhs, rhs) == 0; */
+/* } */
 
 
 static struct objc_method_gcc* objc_load_method_slow(TinyObjcClass* class,
@@ -311,12 +320,12 @@ static struct objc_method_gcc* objc_load_method_slow(TinyObjcClass* class,
 
                 if (!tinyobjc_is_sel_name_registered(method_sel_name)) {
                     abi_method_set_name(method,
-                                        (const char*)tinyobjc_sel_register_name(method_sel_name));
+                                        tinyobjc_sel_register_name(method_sel_name,
+                                                                   typeinfo));
                     method_sel_name = abi_method_name(method);
                 }
 
-                if (type_compare(typeinfo, selector->types) &&
-                    (selector->name == method_sel_name)) {
+                if (selector->name == method_sel_name) {
                     return method;
                 }
             }
@@ -343,7 +352,7 @@ static inline unsigned int hash(unsigned int value)
 }
 
 
-IMP tinyobjc_msg_lookup(TinyObjcClass* class, SEL selector)
+static inline IMP tinyobjc_msg_lookup(TinyObjcClass* class, SEL selector)
 {
     tinyobjc_resolve_class(class);
 
@@ -352,7 +361,8 @@ IMP tinyobjc_msg_lookup(TinyObjcClass* class, SEL selector)
         // but the GCC ABI practically expects you to do this, and other
         // implementations for gcc and clang do the same thing.
         ((struct objc_selector*)selector)->name =
-            (const char*)tinyobjc_sel_register_name(selector->name);
+            tinyobjc_sel_register_name(selector->name,
+                                       selector->types);
     }
 
     Method* dtable = abi_get_dtable(class);
@@ -365,8 +375,7 @@ IMP tinyobjc_msg_lookup(TinyObjcClass* class, SEL selector)
 
         const char* cached_name = (const char*)(cached)->selector;
 
-        if (type_compare(abi_method_typeinfo(cached), selector->types) &&
-            (selector->name == cached_name)) {
+        if (selector->name == cached_name) {
             return cached->imp;
         }
 
