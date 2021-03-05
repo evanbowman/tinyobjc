@@ -2,18 +2,22 @@
 #include "objc.h"
 
 
+@class Pool;
+
+
 @interface Object
 {
     Class isa;
-    int retainCount_;
 }
 
 + (id) alloc;
++ (id) poolAlloc: (Pool*) Pool;
 
 + (id) new;
 - (id) init;
 
 - (void) release;
+- (void) poolRelease: (Pool*) Pool;
 - (instancetype) retain;
 
 + (id) retain;
@@ -26,6 +30,7 @@
 - (Class) class;
 
 + (Class) superclass;
+- (Class) superclass;
 
 + (void) cache;
 

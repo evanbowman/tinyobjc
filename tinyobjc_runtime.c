@@ -2,6 +2,7 @@
 #include "module_abi.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -97,7 +98,18 @@ static inline Method abi_method_at(MethodList methods, int index)
 
 static inline const char* abi_method_name(Method method)
 {
-    return ((const char*)&((struct objc_method_gcc*)method)->selector->index);
+    // In an objc_method_gcc structure, the selector field is in fact not a
+    // pointer to a selector, but a pointer to string literal. I wish this was
+    // documented, because I was super confused.
+    return (const char*)((struct objc_method_gcc*)method)->selector;
+}
+
+
+static inline void abi_method_set_name(Method method, const char* name)
+{
+    struct objc_method_gcc* m = method;
+    // See comment in abi_method_name().
+    m->selector = (SEL)name;
 }
 
 
@@ -105,7 +117,6 @@ static inline const char* abi_method_typeinfo(Method method)
 {
     return ((struct objc_method_gcc*)method)->types;
 }
-
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -118,6 +129,47 @@ static inline const char* abi_method_typeinfo(Method method)
 static struct TinyObjcClassTable {
     TinyObjcClass* class_;
 } tinyobjc_classes[CLASS_TABLE_SIZE];
+
+
+static const char* selector_table[SELECTOR_TABLE_SIZE] = {
+};
+
+
+// We register a selector by replacing its string with a pointer to the location
+// of the string in a selector string array. This allows us to determine whether
+// a selector is registered by comparing its string pointer to the range of the
+// selector table.
+static inline BOOL tinyobjc_is_sel_name_registered(const char* name)
+{
+    return ((const char**) name >= selector_table) &&
+           ((const char**) name < selector_table + SELECTOR_TABLE_SIZE);
+}
+
+
+const char* selector_name(SEL s)
+{
+    if (tinyobjc_is_sel_name_registered(s->name)) {
+        // SEL is registered, so it's been replaced by a pointer into the
+        // selector string table.
+        return *((char**)s->name);
+    }
+    return s->name;
+}
+
+
+static const char** tinyobjc_sel_register_name(const char* name)
+{
+    for (int i = 0; i < SELECTOR_TABLE_SIZE; ++i) {
+        if (selector_table[i] == NULL) {
+            selector_table[i] = name;
+            return &selector_table[i];
+        } else if (strcmp(selector_table[i], name) == 0) {
+            return &selector_table[i];
+        }
+    }
+
+    while (1) ;
+}
 
 
 static id nil_method(id self, SEL _cmd)
@@ -157,6 +209,7 @@ void tinyobjc_make_cache(TinyObjcClass* class)
 
 static TinyObjcClass* tinyobjc_get_class(const char* name)
 {
+
     for (int i = 0; i < CLASS_TABLE_SIZE; ++i) {
         if (tinyobjc_classes[i].class_) {
 
@@ -176,24 +229,6 @@ static TinyObjcClass* tinyobjc_get_class(const char* name)
     }
 
     return NULL;
-}
-
-
-#define TINYOBJC_FNV_PRIME_32 16777619
-#define TINYOBJC_FNV_OFFSET_32 2166136261U
-
-
-static uint32_t tinyobjc_fnv32(const char *s)
-{
-    uint32_t hash = TINYOBJC_FNV_OFFSET_32;
-
-    while (*s != '\0') {
-        hash = hash ^ (*s);
-        hash = hash * TINYOBJC_FNV_PRIME_32;
-        ++s;
-    }
-
-    return hash;
 }
 
 
@@ -229,6 +264,18 @@ static void tinyobjc_resolve_class(TinyObjcClass* class)
 }
 
 
+Class tinyobjc_get_superclass(Class c)
+{
+    Class super = abi_get_super(c);
+
+    if (super) {
+        return super;
+    }
+
+    return (Class)nil;
+}
+
+
 id objc_get_class(const char* name)
 {
     return (id)tinyobjc_get_class(name);
@@ -243,6 +290,8 @@ size_t tinyobjc_class_instance_size(id class)
 
 static int type_compare(const char* lhs, const char* rhs)
 {
+    // TODO: find a way to avoid the string compare for the typename.
+    // Some characters in the typename may be ignored when matching, right?
     return lhs == rhs || strcmp(lhs, rhs) == 0;
 }
 
@@ -260,9 +309,14 @@ static struct objc_method_gcc* objc_load_method_slow(TinyObjcClass* class,
                 const char* method_sel_name = abi_method_name(method);
                 const char* typeinfo = abi_method_typeinfo(method);
 
+                if (!tinyobjc_is_sel_name_registered(method_sel_name)) {
+                    abi_method_set_name(method,
+                                        (const char*)tinyobjc_sel_register_name(method_sel_name));
+                    method_sel_name = abi_method_name(method);
+                }
+
                 if (type_compare(typeinfo, selector->types) &&
-                    (selector->name == method_sel_name ||
-                     strcmp(selector->name, method_sel_name) == 0)) {
+                    (selector->name == method_sel_name)) {
                     return method;
                 }
             }
@@ -278,20 +332,41 @@ static struct objc_method_gcc* objc_load_method_slow(TinyObjcClass* class,
 }
 
 
+static inline unsigned int hash(unsigned int value)
+{
+    unsigned basis = 0x811C9DC5;
+    unsigned prime = 0x01000193;
+    unsigned result = basis;
+    result *= prime;
+    result ^= value;
+    return result;
+}
+
+
 IMP tinyobjc_msg_lookup(TinyObjcClass* class, SEL selector)
 {
     tinyobjc_resolve_class(class);
 
+    if (!tinyobjc_is_sel_name_registered(selector->name)) {
+        // This line is probably pretty scary. Yes we are casting away const,
+        // but the GCC ABI practically expects you to do this, and other
+        // implementations for gcc and clang do the same thing.
+        ((struct objc_selector*)selector)->name =
+            (const char*)tinyobjc_sel_register_name(selector->name);
+    }
+
     Method* dtable = abi_get_dtable(class);
 
     if (dtable) {
-        uint32_t offset = tinyobjc_fnv32(selector->name) % METHOD_CACHE_SIZE;
+        uint32_t offset =
+            hash((unsigned)(intptr_t)selector->name) % METHOD_CACHE_SIZE;
 
         struct objc_method_gcc* cached = dtable[offset];
 
-        const char* cached_name = (const char*)&(cached)->selector->index;
+        const char* cached_name = (const char*)(cached)->selector;
 
-        if (strcmp(selector->name, cached_name) == 0) {
+        if (type_compare(abi_method_typeinfo(cached), selector->types) &&
+            (selector->name == cached_name)) {
             return cached->imp;
         }
 
@@ -361,6 +436,15 @@ static void tinyobjc_load_class(struct objc_class_gsv1* class)
     }
 }
 
+
+static void tinyobjc_load_category(struct objc_category_gcc* category)
+{
+    while (1) {
+        // TODO: support categories...
+    }
+}
+
+
 void __objc_exec_class(struct objc_module_abi_8* module)
 {
     struct objc_symbol_table_abi_8* symbols = module->symbol_table;
@@ -381,6 +465,7 @@ void __objc_exec_class(struct objc_module_abi_8* module)
     }
 
     for (int i = 0; i < symbols->category_count; ++i) {
+        tinyobjc_load_category(defs);
         ++defs;
     }
 }

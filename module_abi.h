@@ -167,6 +167,9 @@ struct objc_method_gcc
 	 * Selector used to send messages to this method.  The type encoding of
 	 * this method should match the types field.
 	 */
+    // You think this selector pointer points to a selector, do you? Ha. Wrong.
+    // It's actually a pointer to a C-string literal, and no one bothered to
+    // document it anywhere.
 	SEL         selector;
 	/**
 	 * The type encoding for this selector.  Used only for introspection, and
@@ -222,6 +225,32 @@ static inline struct objc_method *method_at_index(struct objc_method_list *l, in
 	assert(l->size >= sizeof(struct objc_method));
 	return (struct objc_method*)(((char*)l->methods) + (i * l->size));
 }
+
+
+struct objc_category_gcc
+{
+	/**
+	 * The name of this category.
+	 */
+	const char                *name;
+	/**
+	 * The name of the class to which this category should be applied.
+	 */
+	const char                *class_name;
+	/**
+	 * The list of instance methods to add to the class.
+	 */
+	struct objc_method_list_gcc   *instance_methods;
+	/**
+	 * The list of class methods to add to the class.
+	 */
+	struct objc_method_list_gcc   *class_methods;
+	/**
+	 * The list of protocols adopted by this category.
+	 */
+	struct objc_protocol_list *protocols;
+};
+
 
 /**
  * Legacy version of the method list.
