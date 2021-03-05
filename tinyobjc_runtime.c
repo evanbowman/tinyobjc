@@ -72,6 +72,12 @@ static inline MethodList abi_methods(TinyObjcClass* class)
 }
 
 
+static inline MethodList abi_methods_next(MethodList methods)
+{
+    return ((struct objc_method_list_gcc*)methods)->next;
+}
+
+
 static inline Method* abi_get_dtable(TinyObjcClass* class)
 {
     return ((struct objc_class_gsv1*)class)->dtable;
@@ -309,9 +315,9 @@ static struct objc_method_gcc* objc_load_method_slow(TinyObjcClass* class,
                                                      SEL selector)
 {
     while (1) {
-        if (abi_methods(class)) {
-            MethodList methods = abi_methods(class);
+        MethodList methods = abi_methods(class);
 
+        while (methods) {
             for (int i = 0; i < abi_method_count(methods); ++i) {
                 Method method = abi_method_at(methods, i);
 
@@ -329,12 +335,13 @@ static struct objc_method_gcc* objc_load_method_slow(TinyObjcClass* class,
                     return method;
                 }
             }
+
+            methods = abi_methods_next(methods);
         }
 
         if (abi_get_super(class)) {
             class = (TinyObjcClass*)abi_get_super(class);
         } else {
-            // FIXME...
             return NULL;
         }
     }
@@ -468,13 +475,26 @@ void __objc_exec_class(struct objc_module_abi_8* module)
 
     void* defs = symbols->definitions;
 
+    while (symbols->class_count > 1) {
+        // TODO: support multiple classes per module.
+    }
     for (int i = 0; i < symbols->class_count; ++i) {
         tinyobjc_load_class(defs);
         ++defs;
     }
 
+    while (symbols->category_count) ;
     for (int i = 0; i < symbols->category_count; ++i) {
         tinyobjc_load_category(defs);
         ++defs;
+    }
+
+    int i = 0;
+    while (1) {
+        if (symbols->definitions[i] == NULL) {
+            break;
+        }
+
+        ++i;
     }
 }

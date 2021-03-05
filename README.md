@@ -6,9 +6,9 @@ Tiny implementation of the Objective-C runtime for the GCC ABI, intended for mic
 - [x] Method dispatch
 - [x] Object allocation
 - [x] Method caching
+- [ ] Multiple classes per module
 - [ ] Unit tests
 - [ ] Message forwarding
 - [ ] Categories
-- [ ] Protocols
 - [ ] Some of the foundation classes
 - [ ] Exception handling
